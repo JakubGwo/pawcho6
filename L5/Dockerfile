@@ -1,12 +1,14 @@
-#STAGE 1
-# Utworzenie pustego konetenera i dnadanie mu nazwy
-FROM scratch AS builder
+# syntax=docker/dockerfile:1.2
 
-# Dodanie systemu będącego bazą dla kontenera
-ADD alpine-minirootfs-3.23.3-x86_64.tar /
-
-# Utworzenie katalogu roboczego
+# ETAP 1: Klonowanie repozytorium
+FROM alpine/git AS clone_stage
 WORKDIR /app
+
+# Dodanie GitHuba do znanych hostów (żeby proces nie zawiesił się na pytaniu (yes/no))
+RUN mkdir -p -m 0600 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+# Pobranie kodu przez protokół SSH z wykorzystaniem sekretu
+RUN --mount=type=ssh git clone git@github.com:JakubGwo/pawcho6.git .
 
 # Dodanie argumentu wersji aplikacji
 ARG VERSION="1.0"
@@ -23,21 +25,18 @@ RUN echo '#!/bin/sh' > create_app.sh && \
     chmod +x create_app.sh
 
 
-#STAGE 2
-
-# Obraz bazowy dla drugiego etapu
+# ETAP 2: # Obraz bazowy dla drugiego etapu
 FROM nginx:alpine
 
-# Dodanie argumentu wersji i ustawienie go jako zmiennej 
-ARG VERSION
-ENV APP_VERSION=$VERSION
+# Etykieta łącząca obraz z paczką na GitHubie (Dobra praktyka z wykładu)
+LABEL org.opencontainers.image.source=https://github.com/JakubGwo/pawcho6
 
 # Intalacja curl do sprawdzenia stanu zdrowia kontenera i czyszcenie pamięci podręcznej apk
-RUN apk add --update curl && \
-    rm -rf /var/cache/apk/*
+RUN apk add --update curl && rm -rf /var/cache/apk/*
 
-# Skopiowanie skryptu tworzącego aplikację HTML do katalogu entrypoint.d, aby został wykonany przy starcie kontenera
-COPY --from=builder /app/create_app.sh /docker-entrypoint.d/40-create_app.sh
+# Skopiowanie wygenerowanego pliku HTML z etapu 1 do katalogu Nginxa
+COPY --from=clone_stage /app/create_app.sh /usr/share/nginx/html/create_app.sh
+
 
 # HEALTHCHECK będzie sprawdzać dostępność aplikacji co 30 sekund, z czasem oczekiwania 1 sekundy i okresem startowym 5 sekund
 HEALTHCHECK --interval=30s --timeout=1s --start-period=5s \
@@ -45,4 +44,3 @@ HEALTHCHECK --interval=30s --timeout=1s --start-period=5s \
 
 # Otwarcie portu 80, na którym działa nginx
 EXPOSE 80
-
